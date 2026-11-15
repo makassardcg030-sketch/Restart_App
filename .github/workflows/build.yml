@@ -51,11 +51,9 @@ jobs:
         pip install "cython==0.29.36" "buildozer==1.5.0" pexpect "setuptools<70" virtualenv
 
     - name: Build APK with Buildozer
-      shell: bash
       run: |
         set -o pipefail
-        echo "JAVA_HOME=$JAVA_HOME"; java -version
-        yes | buildozer -v android debug 2>&1 | tee build.log
+        buildozer -v android debug 2>&1 | tee build.log
 
     - name: Upload build log
       if: always()
@@ -69,3 +67,4 @@ jobs:
       with:
         name: package
         path: bin/*.apk
+        if-no-files-found: error
