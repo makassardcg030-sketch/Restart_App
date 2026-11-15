@@ -254,7 +254,7 @@ class ActionCard(ButtonBehavior, BoxLayout):
         self.bg_color_instruction.rgba = CARD_BG
 
 
-class DcpGroupCard(ButtonBehavior, RoundedPanel):
+class DcpGroupCard(RoundedPanel):
 
     ZONE_COLS = 3
     BTN_H = dp(43)
@@ -265,6 +265,7 @@ class DcpGroupCard(ButtonBehavior, RoundedPanel):
         ip,
         zones,
         color,
+        on_zone,
         **kwargs
     ):
         super().__init__(
@@ -346,24 +347,18 @@ class DcpGroupCard(ButtonBehavior, RoundedPanel):
 
         for z in zones:
 
-            b = Label(
+            b = Button(
                 text="ZONA " + z,
                 bold=True,
                 font_size="12sp",
-                color=WHITE
+                color=WHITE,
+                background_normal="",
+                background_down="",
+                background_color=color
             )
 
-            with b.canvas.before:
-                Color(*color)
-                chip_rect = RoundedRectangle(
-                    pos=b.pos,
-                    size=b.size,
-                    radius=[dp(6)]
-                )
-
             b.bind(
-                pos=lambda w, p, r=chip_rect: setattr(r, "pos", p),
-                size=lambda w, sz, r=chip_rect: setattr(r, "size", sz)
+                on_release=lambda btn, zz=z: on_zone(zz)
             )
 
             grid.add_widget(b)
@@ -917,13 +912,9 @@ class RestartApp(App):
                 card = DcpGroupCard(
                     ip,
                     zonas,
-                    color
-                )
-
-                card.bind(
-                    on_release=lambda c, i=ip, zs=list(zonas),
-                    f=cmd_fn:
-                    self.on_group(i, zs, f)
+                    color,
+                    on_zone=lambda z, i=ip, f=cmd_fn, l=label_fn:
+                    self.on_card(l(z), i, f(z))
                 )
 
                 self.grid.add_widget(card)
@@ -1033,142 +1024,6 @@ class RestartApp(App):
         else:
 
             self.execute(name, ip, command)
-
-    def on_group(self, ip, zonas, cmd_fn):
-
-        if self.busy:
-            self.set_status(
-                "Sedang memproses perintah sebelumnya..."
-            )
-            return
-
-        if not CONFIRM_BEFORE_SEND:
-            self.execute_group(ip, zonas, cmd_fn)
-            return
-
-        box = BoxLayout(
-            orientation="vertical",
-            padding=dp(15),
-            spacing=dp(10)
-        )
-
-        box.add_widget(
-            Label(
-                text=(
-                    "Restart DCP di IP target ini?\n\n"
-                    "[b]{}[/b]\n"
-                    "{} zona"
-                ).format(ip, len(zonas)),
-                markup=True,
-                color=WHITE
-            )
-        )
-
-        row = BoxLayout(
-            size_hint_y=None,
-            height=dp(45),
-            spacing=dp(10)
-        )
-
-        pop = Popup(
-            title="Konfirmasi Perintah",
-            content=box,
-            size_hint=(0.85, 0.4),
-            separator_color=BLUE,
-            background_color=PANEL
-        )
-
-        yes = Button(
-            text="KIRIM",
-            background_normal="",
-            background_color=GREEN,
-            bold=True
-        )
-
-        no = Button(
-            text="BATAL",
-            background_normal="",
-            background_color=RED,
-            bold=True
-        )
-
-        yes.bind(
-            on_release=lambda *_: (
-                pop.dismiss(),
-                self.execute_group(ip, zonas, cmd_fn)
-            )
-        )
-
-        no.bind(on_release=pop.dismiss)
-
-        row.add_widget(yes)
-        row.add_widget(no)
-        box.add_widget(row)
-
-        pop.open()
-
-    def execute_group(self, ip, zonas, cmd_fn):
-
-        if self.busy:
-            return
-
-        self.busy = True
-
-        self.set_status(
-            "Mengirim restart DCP ke {} ({} zona)...".format(
-                ip, len(zonas)
-            )
-        )
-
-        self.connection_label.text = "PROCESSING"
-        self.connection_label.color = ORANGE
-
-        def work():
-
-            failed = []
-            last_msg = ""
-
-            for z in zonas:
-                ok, msg = send_command(ip, cmd_fn(z))
-                if not ok:
-                    failed.append(z)
-                    last_msg = msg
-
-            total = len(zonas)
-
-            if not failed:
-                result = (
-                    "[SUKSES] DCP {} - {} zona berhasil."
-                    .format(ip, total)
-                )
-                status_color = GREEN
-                ok_all = True
-            else:
-                result = (
-                    "[GAGAL] DCP {} - {}/{} zona gagal ({}). {}"
-                    .format(
-                        ip,
-                        len(failed),
-                        total,
-                        ", ".join(failed),
-                        last_msg
-                    )
-                )
-                status_color = RED
-                ok_all = False
-
-            Clock.schedule_once(
-                lambda *_: self.finish_execute(
-                    result,
-                    status_color,
-                    ok_all
-                )
-            )
-
-        threading.Thread(
-            target=work,
-            daemon=True
-        ).start()
 
     def execute(self, name, ip, command):
 
