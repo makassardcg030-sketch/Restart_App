@@ -7,7 +7,8 @@ from datetime import datetime
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.graphics import Color, RoundedRectangle
+from kivy.animation import Animation
+from kivy.graphics import Color, Ellipse, RoundedRectangle
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -1234,6 +1235,113 @@ class RestartApp(App):
         )
 
         self.connection_label.color = color
+
+        self.show_result_popup(ok, result)
+
+    def show_result_popup(self, ok, detail):
+
+        # Tutup popup hasil sebelumnya
+        old = getattr(self, "_result_pop", None)
+        if old:
+            try:
+                old.dismiss()
+            except Exception:
+                pass
+
+        accent = GREEN if ok else RED
+        title = "BERHASIL" if ok else "GAGAL"
+        icon = "OK" if ok else "X"
+
+        # Buang prefix [SUKSES] / [GAGAL] dari detail
+        if detail.startswith("["):
+            detail = detail.split("]", 1)[-1].strip()
+
+        card = RoundedPanel(
+            bg_color=PANEL,
+            orientation="vertical",
+            padding=dp(16),
+            spacing=dp(8)
+        )
+
+        # Lingkaran ikon
+        badge = BoxLayout(
+            size_hint=(None, None),
+            size=(dp(64), dp(64)),
+            pos_hint={"center_x": 0.5}
+        )
+
+        with badge.canvas.before:
+            Color(*accent)
+            circle = Ellipse(pos=badge.pos, size=badge.size)
+
+        badge.bind(
+            pos=lambda w, p: setattr(circle, "pos", p),
+            size=lambda w, sz: setattr(circle, "size", sz)
+        )
+
+        badge.add_widget(
+            Label(
+                text="[b]{}[/b]".format(icon),
+                markup=True,
+                font_size="24sp",
+                color=WHITE
+            )
+        )
+
+        wrap = BoxLayout(size_hint_y=None, height=dp(64))
+        wrap.add_widget(Label())
+        wrap.add_widget(badge)
+        wrap.add_widget(Label())
+        card.add_widget(wrap)
+
+        card.add_widget(
+            Label(
+                text="[b]{}[/b]".format(title),
+                markup=True,
+                font_size="20sp",
+                color=accent,
+                size_hint_y=None,
+                height=dp(30)
+            )
+        )
+
+        msg = Label(
+            text=detail,
+            font_size="12sp",
+            color=MUTED,
+            halign="center",
+            valign="top"
+        )
+        msg.bind(
+            size=lambda w, sz: setattr(w, "text_size", (sz[0], None))
+        )
+        card.add_widget(msg)
+
+        pop = Popup(
+            title="",
+            separator_height=0,
+            content=card,
+            size_hint=(0.8, None),
+            height=dp(240),
+            background="",
+            background_color=(0, 0, 0, 0),
+            overlay_color=(0, 0, 0, 0.45),
+            auto_dismiss=True,
+            opacity=0
+        )
+
+        self._result_pop = pop
+        pop.open()
+        Animation(opacity=1, d=0.15).start(pop)
+
+        def close(*_):
+            if self._result_pop is pop:
+                a = Animation(opacity=0, d=0.2)
+                a.bind(on_complete=lambda *__: pop.dismiss())
+                a.start(pop)
+
+        # Hilang otomatis tanpa konfirmasi
+        Clock.schedule_once(close, 1.3 if ok else 2.2)
 
     # ========================================================
     # STATUS
