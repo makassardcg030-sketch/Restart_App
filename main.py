@@ -1,4 +1,3 @@
-
 import json
 import os
 import socket
@@ -17,20 +16,22 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
+from kivy.uix.textinput import TextInput
 
 
 # ============================================================
 # KONFIGURASI
 # ============================================================
 
-DB_CONFIG = {
-    "host": "192.168.42.150",
+DB_DEFAULTS = {
+    "host": "",
     "port": 3306,
-    "user": "root",
-    "password": "exgone",
-    "database": "db_support",
-    "connect_timeout": 5,
+    "user": "",
+    "password": "",
+    "database": "",
 }
+
+DB_TIMEOUT = 5
 
 CLIENT_PORT = 5005
 SOCKET_TIMEOUT = 2
@@ -69,10 +70,17 @@ def zona_sort_key(z):
     return (0, int(z)) if str(z).isdigit() else (1, str(z))
 
 
-def fetch_zones_from_db():
+def fetch_zones_from_db(cfg):
     import pymysql
 
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = pymysql.connect(
+        host=cfg["host"],
+        port=int(cfg["port"]),
+        user=cfg["user"],
+        password=cfg["password"],
+        database=cfg["database"],
+        connect_timeout=DB_TIMEOUT,
+    )
 
     try:
         with conn.cursor() as cur:
@@ -371,7 +379,7 @@ class DcpGroupCard(RoundedPanel):
 
 class RestartApp(App):
 
-    title = "Restart DPD Control Center"
+    title = "Restart DPD and DCP"
 
     def build(self):
 
@@ -383,6 +391,13 @@ class RestartApp(App):
             self.user_data_dir,
             "zones_cache.json"
         )
+
+        self.config_file = os.path.join(
+            self.user_data_dir,
+            "db_config.json"
+        )
+
+        self.db_config = self.read_db_config()
 
         # Root
         root = BoxLayout(
@@ -434,7 +449,7 @@ class RestartApp(App):
 
         title_box.add_widget(
             Label(
-                text="CONTROL CENTER  |  SYSTEM MANAGEMENT",
+                text="DC SUPPORT MKS",
                 font_size="10sp",
                 color=MUTED,
                 halign="left"
@@ -457,6 +472,21 @@ class RestartApp(App):
             on_release=lambda *_: self.load_zones()
         )
 
+        setting = Button(
+            text="SETTING",
+            size_hint_x=None,
+            width=dp(90),
+            bold=True,
+            font_size="12sp",
+            background_normal="",
+            background_color=CARD_BG
+        )
+
+        setting.bind(
+            on_release=lambda *_: self.open_settings()
+        )
+
+        header.add_widget(setting)
         header.add_widget(refresh)
 
         root.add_widget(header)
@@ -596,9 +626,132 @@ class RestartApp(App):
     # DATABASE
     # ========================================================
 
+    def read_db_config(self):
+        try:
+            with open(self.config_file, "r") as f:
+                cfg = json.load(f)
+            if cfg.get("host") and cfg.get("user") \
+                    and cfg.get("database"):
+                return cfg
+        except Exception:
+            pass
+        return None
+
+    def save_db_config(self, cfg):
+        with open(self.config_file, "w") as f:
+            json.dump(cfg, f)
+        self.db_config = cfg
+
+    def open_settings(self, first_time=False):
+
+        cfg = self.db_config or DB_DEFAULTS
+
+        box = BoxLayout(
+            orientation="vertical",
+            spacing=dp(8),
+            padding=dp(10)
+        )
+
+        fields = {}
+
+        for key, label, secret in [
+            ("host", "Host / IP", False),
+            ("port", "Port", False),
+            ("user", "User", False),
+            ("password", "Password", True),
+            ("database", "Nama Database", False),
+        ]:
+            box.add_widget(Label(
+                text=label,
+                font_size="12sp",
+                color=MUTED,
+                halign="left",
+                size_hint_y=None,
+                height=dp(18)
+            ))
+            ti = TextInput(
+                text=str(cfg.get(key, "")),
+                multiline=False,
+                password=secret,
+                write_tab=False,
+                size_hint_y=None,
+                height=dp(40)
+            )
+            fields[key] = ti
+            box.add_widget(ti)
+
+        err = Label(
+            text="",
+            color=RED,
+            font_size="11sp",
+            size_hint_y=None,
+            height=dp(20)
+        )
+        box.add_widget(err)
+
+        row = BoxLayout(
+            size_hint_y=None,
+            height=dp(44),
+            spacing=dp(8)
+        )
+
+        save = Button(
+            text="SIMPAN",
+            background_normal="",
+            background_color=GREEN,
+            bold=True
+        )
+        row.add_widget(save)
+
+        pop = Popup(
+            title="Pengaturan Database",
+            content=box,
+            size_hint=(0.92, None),
+            height=dp(470),
+            auto_dismiss=not first_time
+        )
+
+        if not first_time:
+            cancel = Button(
+                text="BATAL",
+                background_normal="",
+                background_color=RED,
+                bold=True
+            )
+            cancel.bind(on_release=pop.dismiss)
+            row.add_widget(cancel)
+
+        box.add_widget(row)
+
+        def do_save(*_):
+            new = {k: v.text.strip() for k, v in fields.items()}
+            if not (new["host"] and new["user"]
+                    and new["database"]):
+                err.text = "Host, User, dan Database wajib diisi"
+                return
+            try:
+                new["port"] = int(new["port"] or 3306)
+            except ValueError:
+                err.text = "Port harus angka"
+                return
+            self.save_db_config(new)
+            pop.dismiss()
+            self.load_zones()
+
+        save.bind(on_release=do_save)
+
+        pop.open()
+
     def load_zones(self):
 
         if self.busy:
+            return
+
+        if not self.db_config:
+            self.connection_label.text = "BELUM DISETTING"
+            self.connection_label.color = ORANGE
+            self.set_status("Isi pengaturan database dulu.")
+            self.open_settings(first_time=True)
             return
 
         self.set_status(
@@ -617,7 +770,7 @@ class RestartApp(App):
 
         try:
 
-            data = fetch_zones_from_db()
+            data = fetch_zones_from_db(self.db_config)
 
             with open(
                 self.cache_file,
