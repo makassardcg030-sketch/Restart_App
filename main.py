@@ -5,6 +5,7 @@ import threading
 from datetime import datetime
 # ini kita coba branch
 # test branch kedua
+# test gi
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.metrics import dp
